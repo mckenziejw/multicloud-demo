@@ -1006,7 +1006,7 @@ rtt min/avg/max/mdev = 3.900/5.316/10.361/2.528 ms
 1. Run the `terraform destroy` command on the deployment hosts to tear down the demo infrastructure and return to starting state.
 
 ```shell
-$ sudo docker run -it -v $PWD:/project -e AWS_SHARED_CREDENTIALS_FILE="aws_credentials" autofunbot/junos_deployer terraform destroy -auto-approve
+$ sudo docker run -it -v $PWD:/project -e AWS_SHARED_CREDENTIALS_FILE="aws_credentials" autofunbot/junos_automator terraform destroy -auto-approve
 ```
 
 ## Detailed Configuration <a name="detailed-config"></a>
@@ -1027,46 +1027,6 @@ terraform:
 ```
 
 ### Configuring Terraform provider settings
-
-The terraform/providers portion of the deployment vars file defines high level and default settings for your AWS and Azure instances.
-
-    Note: This toolset currently assumes all instances are assigned in the same region and availability zone for each cloud provider.
-
-Populate all fields with values appropriate to your deployment scenario. Be aware that AWS AMI values are *region-specific*.
-
-    Note: The provided deployment vars file uses YAML anchors to avoid repeated values. ```&name``` defines an anchor containing the value that follows. ```*name``` inserts that value elsewhere. See [here](https://medium.com/@kinghuang/docker-compose-anchors-aliases-extensions-a1e4105d70bd) for more details.
-
-```YAML
-providers:
-    aws:
-      region: <NEEDS VALUE>
-      default_srx_ami: <NEEDS VALUE>
-      default_web_server_ami: &aws_default_web_server_ami <NEEDS VALUE>
-      default_az: &aws_default_az <NEEDS VALUE>
-      default_srx_instance_type: &aws_default_srx_instance_type <NEEDS VALUE>
-      default_web_server_instance_type: &aws_default_web_server_instance_type <NEEDS VALUE>
-      default_key_name: *default_key_name
-    azurerm:
-      version: "1.33.1"
-      client_id: <NEEDS VALUE>
-      secret: <NEEDS VALUE>
-      subscription_id: <NEEDS VALUE>
-      tenant_id: <NEEDS VALUE>
-      default_srx_instance_type: &az_default_srx_instance_type <NEEDS VALUE>
-      default_web_server_instance_type: &az_default_web_server_instance_type <NEEDS VALUE>
-      default_srx_image: &az_default_srx_image
-        publisher: juniper-networks
-        offer: vsrx-next-generation-firewall-payg
-        sku: vsrx-azure-image-byol
-        version: "19.4.1"
-        plan: vsrx-next-generation-firewall-byol
-        product: vsrx-next-generation-firewall-payg
-      default_web_server_image: &az_default_web_server_image
-        publisher: Canonical
-        offer: UbuntuServer
-        sku: "16.04-LTS"
-        version: latest
-```
 
 ### Defining Instance Settings
 
