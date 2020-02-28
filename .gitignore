@@ -1,0 +1,11 @@
+.terraform/**
+tfstate.json
+credentials
+ansible/keys/**
+ansible/juniper_lab_default
+ansible/juniper_lab_default.pub
+ansible/static_files/skyatp-trial-license
+ansible/host_vars/*.yml
+ansible/config/*.conf
+ansible/test
+vmware/

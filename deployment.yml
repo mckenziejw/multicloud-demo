@@ -1,0 +1,921 @@
+---
+# Prefix must be xxx.xxx, find a better way to do this later
+st_prefix: '192.168'
+admin_user: &admin_user lab
+admin_password: &admin_password Juniper123!
+rsa_key_name: &default_key_name <NEEDS VALUE>
+terraform:
+  lab_domain: &lab_domain juniper.net
+  s3_backend: 
+    bucket: <NEEDS VALUE>
+    key: <NEEDS VALUE>
+    region: <NEEDS VALUE>
+  providers:
+    aws:
+      region: <NEEDS VALUE>
+      default_srx_ami: &aws_default_srx_ami <NEEDS VALUE>
+      default_web_server_ami: &aws_default_web_server_ami <NEEDS VALUE>
+      default_az: &aws_default_az <NEEDS VALUE>
+      default_srx_instance_type: &aws_default_srx_instance_type <NEEDS VALUE>
+      default_web_server_instance_type: &aws_default_web_server_instance_type <NEEDS VALUE>
+      default_key_name: *default_key_name
+    azurerm:
+      version: "1.33.1"
+      client_id: <NEEDS VALUE>
+      secret: <NEEDS VALUE>
+      subscription_id: <NEEDS VALUE>
+      tenant_id: <NEEDS VALUE>
+      default_srx_instance_type: &az_default_srx_instance_type <NEEDS VALUE>
+      default_web_server_instance_type: &az_default_web_server_instance_type <NEEDS VALUE>
+      default_srx_image: &az_default_srx_image
+        publisher: juniper-networks
+        offer: vsrx-next-generation-firewall-payg
+        sku: vsrx-azure-image-byol
+        version: "19.4.1"
+        plan: vsrx-azure-image-byol
+        product: vsrx-next-generation-firewall-payg
+      default_web_server_image: &az_default_web_server_image
+        publisher: Canonical
+        offer: UbuntuServer
+        sku: "16.04-LTS"
+        version: latest
+        plan: 
+  resources:
+    aws:
+      vpcs:
+        - name: &aws_vpc1 multicloud-lab-vpc
+          cidr_block: 10.0.0.0/16
+          tags:
+            Name: *aws_vpc1
+      security_groups:
+        - name: &aws_allow_all allow-all
+          description: "Allow all inbound traffic"
+          vpc: *aws_vpc1
+          ingress:
+            from_port: 0
+            to_port: 0
+            protocol: -1
+            cidr_block: "0.0.0.0/0"
+          egress:
+            from_port: 0
+            to_port: 0
+            protocol: -1
+            cidr_block: "0.0.0.0/0"
+          tags:
+            Name: allow_all
+        - name: &aws_quarantine quarantine
+          description: deny all traffic
+          vpc: *aws_vpc1
+          tags:
+            Name: quarantine
+      subnets:
+        - name: &aws_dmz dmz
+          cidr_block: "10.0.2.0/24"
+          availability_zone: *aws_default_az
+          vpc: *aws_vpc1
+          tags:
+            Name: *aws_dmz
+        - name: &aws_trust trust
+          cidr_block: "10.0.1.0/24"
+          vpc: *aws_vpc1
+          availability_zone: *aws_default_az
+          tags:
+            Name: *aws_trust
+        - name: &aws_untrust untrust
+          cidr_block: "10.0.0.0/24"
+          vpc: *aws_vpc1
+          availability_zone: *aws_default_az
+          tags:
+            Name: *aws_untrust
+        - name: &aws_mgmt mgmt
+          cidr_block: "10.0.254.0/24"
+          vpc: *aws_vpc1
+          availability_zone: *aws_default_az
+          tags:
+            Name: *aws_mgmt
+      internet_gateways:
+        - name: &aws_gw1 gw
+          vpc: *aws_vpc1
+          tags:
+            Name: *aws_gw1
+      instances:
+        - name: &aws_vsrx1 aws-vsrx1
+          type: vsrx
+          ami: *aws_default_srx_ami
+          instance_type: *aws_default_srx_instance_type
+          loopback_ip: 10.0.1.253
+          availability_zone: *aws_default_az
+          key_name: *default_key_name
+          username: ec2-user
+          key_file: *default_key_name
+          domain: *lab_domain
+          tags:
+            Name: *aws_vsrx1
+            App: firewall
+            Department: network
+            Tier: network 
+            JCS: True
+          interfaces:
+            - subnet: *aws_mgmt
+              security_group: *aws_allow_all
+              source_dest_check: false
+              public_ip: true
+            - subnet: *aws_untrust
+              security_group: *aws_allow_all
+              source_dest_check: false
+              public_ip: true
+              private_ip: 10.0.0.254
+              gateway_ip: 10.0.0.1
+              zone: untrust
+            - subnet: *aws_trust
+              security_group: *aws_allow_all
+              source_dest_check: false
+              public_ip: false
+              private_ip: 10.0.1.254
+              zone: trust
+            - subnet: *aws_dmz
+              security_group: *aws_allow_all
+              source_dest_check: false
+              public_ip: false
+              private_ip: 10.0.2.254
+              zone: dmz
+        - name: &aws_web_server aws-web-server-1
+          type: host
+          ami: *aws_default_web_server_ami
+          instance_type: *aws_default_web_server_instance_type
+          availability_zone: *aws_default_az
+          key_name: *default_key_name
+          username: ubuntu
+          key_file: *default_key_name
+          domain: *lab_domain
+          gw_subnet: "10.0.0.0/8"
+          gw_nh: 10.0.1.254
+          tags:
+            Name: *aws_web_server
+            App: web2
+            Department: finance
+            Tier: web
+          interfaces:
+            - subnet: *aws_trust
+              security_group: *aws_allow_all
+              source_dest_check: false
+              public_ip: false
+              gw_subnet: "10.0.0.0/16"
+              gw_nh: 10.0.1.254
+              private_ip: 10.0.1.10
+              zone: trust
+        - name: &aws_db_server aws-db-server-1
+          type: host
+          ami: *aws_default_web_server_ami
+          instance_type: *aws_default_web_server_instance_type
+          availability_zone: *aws_default_az
+          key_name: *default_key_name
+          username: ubuntu
+          key_file: *default_key_name
+          domain: *lab_domain
+          gw_subnet: "10.0.0.0/8"
+          gw_nh: 10.0.2.254
+          tags:
+            Name: *aws_db_server
+            App: mysql
+            Department: finance
+            Tier: db
+          interfaces:
+            - subnet: *aws_dmz
+              security_group: *aws_allow_all
+              source_dest_check: false
+              public_ip: false
+              private_ip: 10.0.2.10
+              zone: dmz
+      route_tables:
+        - name: &aws_main_routes main-routes
+          vpc: *aws_vpc1
+          routes:
+            - cidr_block: "0.0.0.0/0"
+              next_hop:
+                type: gw
+                value: *aws_gw1
+          tags:
+            Name: *aws_main_routes
+        - name: &aws_trust_routes trust-routes
+          vpc: *aws_vpc1
+          routes:
+            - cidr_block: "0.0.0.0/0"
+              next_hop:
+                type: interface
+                value:
+                  instance: *aws_vsrx1
+                  subnet: *aws_trust
+          tags:
+            Name: *aws_trust_routes
+        - name: &aws_dmz_routes dmz-routes
+          vpc: *aws_vpc1
+          routes:
+            - cidr_block: "0.0.0.0/0"
+              next_hop:
+                type: interface
+                value:
+                  instance: *aws_vsrx1
+                  subnet: *aws_dmz
+          tags:
+            Name: *aws_dmz_routes
+      route_table_associations:
+        - name: mgmt_association
+          subnet: *aws_mgmt
+          route_table: *aws_main_routes
+        - name: untrust_association
+          subnet: *aws_untrust
+          route_table: *aws_main_routes
+        - name: trust_association
+          subnet: *aws_trust
+          route_table: *aws_trust_routes
+        - name: dmz_association
+          subnet: *aws_dmz
+          route_table: *aws_dmz_routes
+    azure:
+      resource_groups:
+        - name: &az_resource_group1 <NEEDS VALUE>
+          location: &az_location1 <NEEDS VALUE>
+      security_groups:
+        - name: &az_allow_all allow_all_traffic
+          location: *az_location1
+          resource_group: *az_resource_group1
+          rules:
+            - name: allow_all_inbound
+              priority: 100
+              direction: Inbound
+              access: Allow
+              protocol: '*'
+              source_port_range: '*'
+              destination_port_range: '*'
+              source_address_prefix: '*'
+              destination_address_prefix: '*'
+            - name: allow_all_outbound
+              priority: 101
+              direction: Outbound
+              access: Allow
+              protocol: '*'
+              source_port_range: '*'
+              destination_port_range: '*'
+              source_address_prefix: '*'
+              destination_address_prefix: '*'
+          tags:
+            - environment: Labs
+        - name: &az_quarantine quarantine
+          location: *az_location1
+          resource_group: *az_resource_group1
+          rules:
+            - name: allow_all_inbound
+              priority: 100
+              direction: Inbound
+              access: Deny
+              protocol: '*'
+              source_port_range: '*'
+              destination_port_range: '*'
+              source_address_prefix: '*'
+              destination_address_prefix: '*'
+            - name: allow_all_outbound
+              priority: 101
+              direction: Outbound
+              access: Deny
+              protocol: '*'
+              source_port_range: '*'
+              destination_port_range: '*'
+              source_address_prefix: '*'
+              destination_address_prefix: '*'
+          tags:
+            - environment: Labs
+      virtual_networks:
+        - name: &az_vnet1 multicloud-vnet
+          location: *az_location1
+          resource_group: *az_resource_group1
+          address_space: "10.1.0.0/16"
+          dns_server: "8.8.8.8"
+          tags:
+            environment: Production
+      subnets:
+        - name: &az_mgmt mgmt
+          resource_group: *az_resource_group1
+          virtual_network: *az_vnet1
+          address_prefix: "10.1.254.0/24"
+          security_group: *az_allow_all
+        - name: &az_untrust untrust
+          resource_group: *az_resource_group1
+          virtual_network: *az_vnet1
+          address_prefix: "10.1.0.0/24"
+          security_group: *az_allow_all
+        - name: &az_trust trust
+          resource_group: *az_resource_group1
+          virtual_network: *az_vnet1
+          address_prefix: "10.1.1.0/24"
+          security_group: *az_allow_all
+        - name: &az_dmz dmz
+          resource_group: *az_resource_group1
+          virtual_network: *az_vnet1
+          address_prefix: "10.1.2.0/24"
+          security_group: *az_allow_all
+      subnet_security_group_associations:
+        - subnet: *az_mgmt
+          security_group: *az_allow_all
+        - subnet: *az_untrust
+          security_group: *az_allow_all
+        - subnet: *az_trust
+          security_group: *az_allow_all
+        - subnet: *az_dmz
+          security_group: *az_allow_all
+      route_tables:
+        - name: &az_mgmt_routes mgmt-routes
+          location: *az_location1
+          resource_group: *az_resource_group1
+          disable_bgp_route_propogation: false
+          routes:
+            - name: internet
+              address_prefix: "0.0.0.0/0"
+              next_hop_type: internet
+        - name: &az_untrust_routes untrust-routes
+          location: *az_location1
+          resource_group: *az_resource_group1
+          disable_bgp_route_propogation: false
+          routes:
+            - name: internet
+              address_prefix: "0.0.0.0/0"
+              next_hop_type: internet
+        - name: &az_trust_routes trust-routes
+          location: *az_location1
+          resource_group: *az_resource_group1
+          disable_bgp_route_propogation: false
+          routes:
+            - name: internet
+              address_prefix: "0.0.0.0/0"
+              next_hop_type: VirtualAppliance
+              next_hop_in_ip_address: "10.1.1.254"
+            - name: to-dmz
+              address_prefix: "10.1.2.0/24"
+              next_hop_type: VirtualAppliance
+              next_hop_in_ip_address: "10.1.1.254"
+        - name: &az_dmz_routes dmz-routes
+          location: *az_location1
+          resource_group: *az_resource_group1
+          disable_bgp_route_propogation: false
+          routes:
+            - name: internet
+              address_prefix: "0.0.0.0/0"
+              next_hop_type: VirtualAppliance
+              next_hop_in_ip_address: "10.1.2.254"
+            - name: to-trust
+              address_prefix: "10.1.1.0/24"
+              next_hop_type: VirtualAppliance
+              next_hop_in_ip_address: "10.1.2.254"
+      instances:
+        - name: &az_vsrx1 azure-vsrx1
+          type: vsrx
+          location: *az_location1
+          resource_group: *az_resource_group1
+          loopback_ip: 10.1.1.253
+          domain: *lab_domain
+          username: lab
+          key_file: *default_key_name
+          tags:
+            Name: *az_vsrx1
+            Tier: network
+            Department: network
+            App: firewall
+            JCS: True
+          interfaces:
+            - name: vsrx1-mgmt
+              location: *az_location1
+              resource_group: *az_resource_group1
+              security_group: *az_allow_all
+              subnet: *az_mgmt
+              public_ip: true
+              private_ip_address_allocation: Dynamic
+            - name: vsrx1-untrust
+              location: *az_location1
+              resource_group: *az_resource_group1
+              security_group: *az_allow_all
+              subnet: *az_untrust
+              public_ip: true
+              private_ip: "10.1.0.254"
+              gateway_ip: "10.1.0.1"
+              private_ip_address_allocation: Static
+              zone: untrust
+            - name: vsrx1-trust
+              location: *az_location1
+              resource_group: *az_resource_group1
+              security_group: *az_allow_all
+              subnet: *az_trust
+              public_ip: false
+              private_ip: "10.1.1.254"
+              private_ip_address_allocation: Static
+              zone: trust
+            - name: vsrx1-dmz
+              location: *az_location1
+              resource_group: *az_resource_group1
+              security_group: *az_allow_all
+              subnet: *az_dmz
+              public_ip: false
+              private_ip: "10.1.2.254"
+              private_ip_address_allocation: Static
+              zone: dmz
+          primary_interface: vsrx1-mgmt
+          image: *az_default_srx_image
+          size: *az_default_srx_instance_type
+          os_disk:
+            name: vsrx-disk
+            caching: ReadWrite
+            create_option: FromImage
+            managed_disk_type: StandardSSD_LRS
+          os_profile:
+            computer_name: vsrx
+            admin_username: *admin_user
+            admin_password: *admin_password
+          os_profile_linux_config:
+            disable_password_authentication: false
+        - name: &az_web_server az-web-server
+          type: host
+          location: *az_location1
+          resource_group: *az_resource_group1
+          domain: juniper.net
+          gw_subnet: "10.1.0.0/16"
+          gw_nh: 10.1.1.254
+          tags:
+            App: web1
+            Name: *az_web_server
+            Tier: web
+            Department: hr
+          interfaces:
+            - name: az-web-server-trust
+              location: *az_location1
+              resource_group: *az_resource_group1
+              security_group: *az_allow_all
+              subnet: *az_trust
+              public_ip: false
+              private_ip_address_allocation: Static
+              private_ip: "10.1.1.10"
+              zone: trust
+          primary_interface: az-web-server-trust
+          image: *az_default_web_server_image
+          size: *az_default_web_server_instance_type
+          os_disk:
+            name: web-server-disk
+            caching: ReadWrite
+            create_option: FromImage
+            managed_disk_type: StandardSSD_LRS
+          os_profile:
+            computer_name: az-web-server-1
+            admin_username: *admin_user
+            admin_password: *admin_password
+          os_profile_linux_config:
+            disable_password_authentication: false
+        - name: &az_db_server az-db-server-1
+          type: host
+          location: *az_location1
+          resource_group: *az_resource_group1
+          domain: juniper.net
+          gw_subnet: "10.1.0.0/16"
+          gw_nh: 10.1.2.254
+          tags:
+            App: mysql
+            Name: *az_db_server
+            Tier: db
+            Department: hr
+          interfaces:
+            - name: az-db-server-dmz
+              location: *az_location1
+              resource_group: *az_resource_group1
+              security_group: *az_allow_all
+              subnet: *az_dmz
+              public_ip: false
+              private_ip_address_allocation: Static
+              private_ip: "10.1.2.10"
+              zone: dmz
+          primary_interface: az-db-server-dmz
+          image: *az_default_web_server_image
+          size: *az_default_web_server_instance_type
+          os_disk:
+            name: db-server-disk
+            caching: ReadWrite
+            create_option: FromImage
+            managed_disk_type: StandardSSD_LRS
+          os_profile:
+            computer_name: az-db-server-1
+            admin_username: *admin_user
+            admin_password: *admin_password
+          os_profile_linux_config:
+            disable_password_authentication: false
+on_prem:
+  instances:
+    - name: vSRX-1
+      type: vsrx
+      username: lab
+      loopback_ip: 10.0.100.253
+      mgmt_ip: <NEEDS VALUE>
+      public_ip: <NEEDS VALUE>
+      interfaces:
+      - name: fxp0
+        public_ip: true
+      - name: ge-0/0/0
+        public_ip: true
+      - name: ge-0/0/1
+        public_ip: false
+        private_ip: 10.0.100.1
+      - name: ge-0/0/2
+        public_ip: false
+        private_ip: 10.0.101.1
+      - name: ge-0/0/3
+        public_ip: false
+        private_ip: 172.25.11.254
+srx_configs:
+  vSRX-1:
+    license_file: <NEEDS VALUE>
+    st_mtu: 1436
+    ipsec_mss: 1379
+    global_security_policies:
+      - name: 1
+        match:
+          source_address: any
+          destination_address: any
+          application: any
+          from_zone: any
+          to_zone: any
+        then:
+          - permit
+    users:
+      - username: lab
+        password: lab123
+        class: superuser
+    nameserver:
+      - "8.8.8.8"
+    ntp:
+        boot_server: "0.north-america.pool.ntp.org"
+        server:
+          - 0.north-america.pool.ntp.org
+          - 1.north-america.pool.ntp.org
+          - 2.north-america.pool.ntp.org
+    services:
+      ssh:
+      netconf:
+        ssh:
+      ping:
+    routing_instances:
+      - name: aws
+        type: virtual-router
+        interfaces:
+          - ge-0/0/0.0
+          - ge-0/0/1.0
+          - ge-0/0/2.0
+          - ge-0/0/3.0
+    zones:
+      untrust:
+        interfaces:
+          - ge-0/0/0.0
+        host_inbound_traffic:
+          system_services:
+            - all
+          protocols:
+            - all
+      trust:
+        interfaces:
+          - ge-0/0/1.0
+          - ge-0/0/3.0
+        host_inbound_traffic:
+          system_services:
+            - all
+          protocols:
+            - all
+      dmz:
+        interfaces:
+          - ge-0/0/2.0
+        host_inbound_traffic:
+          system_services:
+            - all
+          protocols:
+            - all
+      vpn:
+        interfaces: []
+        host_inbound_traffic:
+          system_services:
+            - all
+          protocols:
+            - all
+    ipsec:
+      proposals:
+        - name: ipsec_prop
+          protocol: esp
+          authentication_algorithm: hmac-sha-256-128
+          encryption_algorithm: aes-256-cbc
+      policies:
+        - name: ipsec_pol
+          proposals: ipsec_prop
+      vpns: []
+    ike:
+      ike_proposals:
+        - name: ike-proposal
+          authentication_method: pre-shared-keys
+          dh_groups: group14
+          authentication_algorithm: sha-256
+          encryption_algorithm: aes-256-cbc
+      ike_policies:
+        - mode: main
+          name: ike-policy
+          proposals: ike-proposal
+          pre_shared_key: ascii-text 2109ieobj12ne1ok2d0aown  
+      ike_gateways: []
+    protocols:
+      bgp: 
+        group: 
+          ebgp:
+            type: external
+            export: EXPORT-DEFAULT
+            neighbors: []
+    routing_policies:
+      EXPORT-DEFAULT:
+        - name: default
+          from:
+            - interface [ge-0/0/1.0 ge-0/0/2.0 ge-0/0/3.0]
+          then: 
+            - accept  
+        - name: reject
+          then:
+            - reject
+    nat:
+      source:
+        rule_sets:
+          - name: 1
+            match:
+              - from zone [trust dmz]
+              - to zone untrust
+            rules:
+              - name: internet-bound
+                match:
+                  - source-address 0.0.0.0/0
+                then: 
+                  - source-nat interface
+      static:
+        rule_sets:
+          - name: 1
+            match: 
+              - from zone untrust
+            rules:
+              - name: to-space
+                match:
+                  - source-address 0.0.0.0/0
+                  - destination-address 10.210.40.194/32
+                  - destination-port 8443
+                then:
+                  - static-nat prefix 172.25.11.101/32
+                  - static-nat prefix mapped-port 443
+              - name: to-jenkins
+                match:
+                  - source-address 0.0.0.0/0
+                  - destination-address 10.210.40.194/32
+                  - destination-port 8080
+                then:
+                  - static-nat prefix 172.25.11.253/32
+                  - static-nat prefix mapped-port 8080
+  aws-vsrx1:
+    license_file: <NEEDS VALUE>
+    st_mtu: 1436
+    ipsec_mss: 1379
+    global_security_policies:
+      - name: 1
+        match:
+          source_address: any
+          destination_address: any
+          application: any
+          from_zone: any
+          to_zone: any
+        then:
+          - permit
+    users:
+      - username: lab
+        password: lab123
+        class: superuser
+    nameserver:
+      - "8.8.8.8"
+    ntp:
+        boot_server: "0.north-america.pool.ntp.org"
+        server:
+          - 0.north-america.pool.ntp.org
+          - 1.north-america.pool.ntp.org
+          - 2.north-america.pool.ntp.org
+    services:
+      ssh:
+      netconf:
+        ssh:
+      ping:
+    routing_instances:
+      - name: aws
+        type: virtual-router
+        interfaces:
+          - ge-0/0/0.0
+          - ge-0/0/1.0
+          - ge-0/0/2.0
+    zones:
+      untrust:
+        interfaces:
+          - ge-0/0/0.0
+        host_inbound_traffic:
+          system_services:
+            - all
+          protocols:
+            - all
+      trust:
+        interfaces:
+          - ge-0/0/1.0
+        host_inbound_traffic:
+          system_services:
+            - all
+          protocols:
+            - all
+      dmz:
+        interfaces:
+          - ge-0/0/2.0
+        host_inbound_traffic:
+          system_services:
+            - all
+          protocols:
+            - all
+      vpn:
+        interfaces: []
+        host_inbound_traffic:
+          system_services:
+            - all
+          protocols:
+            - all
+    ipsec:
+      proposals:
+        - name: ipsec_prop
+          protocol: esp
+          authentication_algorithm: hmac-sha-256-128
+          encryption_algorithm: aes-256-cbc
+      policies:
+        - name: ipsec_pol
+          proposals: ipsec_prop
+      vpns: []
+    ike:
+      ike_proposals:
+        - name: ike-proposal
+          authentication_method: pre-shared-keys
+          dh_groups: group14
+          authentication_algorithm: sha-256
+          encryption_algorithm: aes-256-cbc
+      ike_policies:
+        - mode: main
+          name: ike-policy
+          proposals: ike-proposal
+          pre_shared_key: ascii-text 2109ieobj12ne1ok2d0aown  
+      ike_gateways: []
+    protocols:
+      bgp: 
+        group: 
+          ebgp:
+            type: external
+            export: EXPORT-DEFAULT
+            neighbors: []
+    nat:
+      source:
+        rule_sets:
+          - name: 1
+            match:
+              - from zone [trust dmz]
+              - to zone untrust
+            rules:
+              - name: internet-bound
+                match:
+                  - source-address 0.0.0.0/0
+                then: 
+                  - source-nat interface
+    routing_policies:
+      EXPORT-DEFAULT:
+        - name: default
+          from:
+            - interface [ge-0/0/1.0 ge-0/0/2.0]
+          then: 
+            - accept  
+        - name: reject
+          then:
+            - reject
+  azure-vsrx1:
+    license_file: <NEEDS VALUE>
+    st_mtu: 1436
+    ipsec_mss: 1379
+    global_security_policies:
+      - name: 1
+        match:
+          source_address: any
+          destination_address: any
+          application: any
+          from_zone: any
+          to_zone: any
+        then:
+          - permit
+    users:
+      - username: lab
+        password: lab123
+        class: superuser
+    nameserver:
+      - "8.8.8.8"
+    ntp:
+        boot_server: "0.north-america.pool.ntp.org"
+        server:
+          - 0.north-america.pool.ntp.org
+          - 1.north-america.pool.ntp.org
+          - 2.north-america.pool.ntp.org
+    services:
+      ssh:
+      netconf:
+        ssh:
+      ping:
+    routing_instances:
+      - name: aws
+        type: virtual-router
+        interfaces:
+          - ge-0/0/0.0
+          - ge-0/0/1.0
+          - ge-0/0/2.0
+    zones:
+      untrust:
+        interfaces:
+          - ge-0/0/0.0
+        host_inbound_traffic:
+          system_services:
+            - all
+          protocols:
+            - all
+      trust:
+        interfaces:
+          - ge-0/0/1.0
+        host_inbound_traffic:
+          system_services:
+            - all
+          protocols:
+            - all
+      dmz:
+        interfaces:
+          - ge-0/0/2.0
+        host_inbound_traffic:
+          system_services:
+            - all
+          protocols:
+            - all
+      vpn:
+        interfaces: []
+        host_inbound_traffic:
+          system_services:
+            - all
+          protocols:
+            - all
+    ipsec:
+      proposals:
+        - name: ipsec_prop
+          protocol: esp
+          authentication_algorithm: hmac-sha-256-128
+          encryption_algorithm: aes-256-cbc
+      policies:
+        - name: ipsec_pol
+          proposals: ipsec_prop
+      vpns: []
+    ike:
+      ike_proposals:
+        - name: ike-proposal
+          authentication_method: pre-shared-keys
+          dh_groups: group14
+          authentication_algorithm: sha-256
+          encryption_algorithm: aes-256-cbc
+      ike_policies:
+        - mode: main
+          name: ike-policy
+          proposals: ike-proposal
+          pre_shared_key: ascii-text 2109ieobj12ne1ok2d0aown  
+      ike_gateways: []
+    nat:
+      source:
+        rule_sets:
+          - name: 1
+            match:
+              - from zone [trust dmz]
+              - to zone untrust
+            rules:
+              - name: internet-bound
+                match:
+                  - source-address 0.0.0.0/0
+                then: 
+                  - source-nat interface
+    protocols:
+      bgp: 
+        group: 
+          ebgp:
+            type: external
+            export: EXPORT-DEFAULT
+            neighbors: []
+    routing_policies:
+      EXPORT-DEFAULT:
+        - name: default
+          from:
+            - interface [ge-0/0/1.0 ge-0/0/2.0]
+          then: 
+            - accept  
+        - name: reject
+          then:
+            - reject      

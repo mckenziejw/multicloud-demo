@@ -1,0 +1,208 @@
+---
+  - name: Update AWS JunOS Configuration
+    hosts: aws
+    roles:
+      - Juniper.junos
+    connection: local
+    gather_facts: no
+
+    tasks:
+    - name: Checking NETCONF
+      wait_for: 
+        host: "{{ ansible_host_ip }}"
+        port: 830
+        sleep: 30
+    - name: Build Configs
+      template:
+        src: "templates/aws_base_config.j2"
+        dest: "{{ build_dir }}/{{ inventory_hostname }}.conf"
+    - name: Update Config
+      juniper_junos_config:
+        load: set
+        src: "{{ build_dir }}/{{ inventory_hostname }}.conf"
+        host: "{{ mgmt_ip }}"
+        user: "{{ username }}"
+        ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
+        timeout: 180
+      register: result
+    - name: Build Configs
+      template:
+        src: "templates/ntp_config.j2"
+        dest: "{{ build_dir }}/{{ inventory_hostname }}-ntp.conf"
+    - name: Update Config
+      juniper_junos_config:
+        load: set
+        src: "{{ build_dir }}/{{ inventory_hostname }}-ntp.conf"
+        host: "{{ mgmt_ip }}"
+        user: "{{ username }}"
+        ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
+        timeout: 180
+      register: result
+    - name: Print Diff
+      debug:
+        var: result.diff_lines  
+    - name: push skyATP license file
+      junos_scp:
+        src: "{{ playbook_dir }}/static_files/{{ license_file }}"
+        provider:
+          username: "{{ username }}"
+          ssh_keyfile: "{{playbook_dir}}/{{ rsa_key_name }}"
+          host: "{{ mgmt_ip }}"
+      ignore_errors: True
+    - name: install license
+      juniper_junos_command:
+        host: "{{ mgmt_ip }}"
+        user: "{{ username }}"
+        ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
+        command: request system license add {{ license_file }}
+      register: response
+
+    - name: Print license response
+      debug:
+        var: response.stdout
+
+    - name: push commit script
+      junos_scp:
+        src: "{{ playbook_dir }}/static_files/{{ commit_script_file }}"
+        dest: "/var/db/scripts/commit"
+        provider:
+          username: "{{ username }}"
+          ssh_keyfile: "{{playbook_dir}}/{{ rsa_key_name }}"
+          host: "{{ mgmt_ip }}"
+      ignore_errors: True
+
+  - name: Update Azure JunOS Configuration
+    hosts: azure
+    roles:
+      - Juniper.junos
+    connection: local
+    gather_facts: no
+
+    tasks:
+    - name: Checking NETCONF
+      wait_for: 
+        host: "{{ ansible_host_ip }}"
+        port: 830
+        sleep: 30
+    - name: Build Configs
+      template:
+        src: "templates/azure_base_config.j2"
+        dest: "{{ build_dir }}/{{ inventory_hostname }}.conf"
+    - name: Update Config
+      juniper_junos_config:
+        load: set
+        src: "{{ build_dir }}/{{ inventory_hostname }}.conf"
+        host: "{{ mgmt_ip }}"
+        user: "{{ username }}"
+        passwd: "{{ password }}"
+        timeout: 180
+      register: result
+    - name: Build Configs
+      template:
+        src: "templates/ntp_config.j2"
+        dest: "{{ build_dir }}/{{ inventory_hostname }}-ntp.conf"
+    - name: Update Config
+      juniper_junos_config:
+        load: set
+        src: "{{ build_dir }}/{{ inventory_hostname }}-ntp.conf"
+        host: "{{ mgmt_ip }}"
+        user: "{{ username }}"
+        ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
+        timeout: 180
+      register: result
+    - name: push skyATP license file
+      junos_scp:
+        src: "{{ playbook_dir }}/static_files/{{ license_file }}"
+        provider:
+          username: "{{ username }}"
+          ssh_keyfile: "{{playbook_dir}}/{{ rsa_key_name }}"
+          host: "{{ mgmt_ip }}"
+      ignore_errors: True
+    - name: install license
+      juniper_junos_command:
+        host: "{{ mgmt_ip }}"
+        user: "{{ username }}"
+        ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
+        command: request system license add {{ license_file }}
+      register: response
+    - name: Print license response
+      debug:
+        var: response.stdout
+    - name: push commit script
+      junos_scp:
+        src: "{{ playbook_dir }}/static_files/{{ commit_script_file }}"
+        dest: "/var/db/scripts/commit"
+        provider:
+          username: "{{ username }}"
+          ssh_keyfile: "{{playbook_dir}}/{{ rsa_key_name }}"
+          host: "{{ mgmt_ip }}"
+      ignore_errors: True
+
+  - name: Update OnPrem JunOS Configuration
+    hosts: onprem
+    roles:
+      - Juniper.junos
+    connection: local
+    gather_facts: no
+
+    tasks:
+    - name: Checking NETCONF
+      wait_for: 
+        host: "{{ ansible_host_ip }}"
+        port: 830
+        sleep: 30
+    - name: Build Configs
+      template:
+        src: "templates/onprem_base_config.j2"
+        dest: "{{ build_dir }}/{{ inventory_hostname }}.conf"
+    - name: Update Config
+      juniper_junos_config:
+        load: set
+        src: "{{ build_dir }}/{{ inventory_hostname }}.conf"
+        host: "{{ ansible_host_ip }}"
+        user: "{{ username }}"
+        passwd: "{{ password }}"
+        ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
+        timeout: 180
+      register: result
+    - name: Build Configs
+      template:
+        src: "templates/ntp_config.j2"
+        dest: "{{ build_dir }}/{{ inventory_hostname }}-ntp.conf"
+    - name: Update Config
+      juniper_junos_config:
+        load: set
+        src: "{{ build_dir }}/{{ inventory_hostname }}-ntp.conf"
+        host: "{{ ansible_host_ip }}"
+        user: "{{ username }}"
+        ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
+        timeout: 180
+      register: result   
+    - name: push skyATP license file
+      junos_scp:
+        src: "{{ playbook_dir }}/static_files/{{ license_file }}"
+        provider:
+          host: "{{ ansible_host_ip }}"
+          username: "{{ username }}"
+          ssh_keyfile: "{{playbook_dir}}/{{ rsa_key_name }}"
+      ignore_errors: True
+    - name: install license
+      juniper_junos_command:
+        host: "{{ ansible_host_ip }}"
+        user: "{{ username }}"
+        ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
+        command: request system license add {{ license_file }}
+      register: response
+    - name: Print license response
+      debug:
+        var: response.stdout
+    - name: push commit script
+      junos_scp:
+        src: "{{ playbook_dir }}/static_files/{{ commit_script_file }}"
+        dest: "/var/db/scripts/commit"
+        provider:
+          username: "{{ username }}"
+          ssh_keyfile: "{{playbook_dir}}/{{ rsa_key_name }}"
+          host: "{{ mgmt_ip }}"
+      ignore_errors: True
+    

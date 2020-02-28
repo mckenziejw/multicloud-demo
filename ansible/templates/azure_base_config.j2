@@ -1,0 +1,172 @@
+delete
+set system login user ec2-user full-name juniper-aws-ec2-user
+set system login user ec2-user uid 100
+set system login user ec2-user class super-user
+set system login user ec2-user authentication ssh-rsa "{{ rsa_key | trim }}"
+set system root-authentication encrypted-password *disabled*
+set system services ssh
+set system services netconf ssh
+set groups azure-provision system license autoupdate url https://ae1.juniper.net/junos/key_retrieval
+{% for server in nameserver %}
+set system name-server {{ server }}
+{% endfor %}
+set system time-zone America/Los_Angeles
+set system root-authentication ssh-rsa "{{ rsa_key | trim }}"
+set system login user lab uid 2000
+set system login user lab class superuser
+set system login user lab authentication encrypted-password "$6$Ea8tLq/z$6T2/Sn31VPrvMkrSFrI8dKsuDdc7WbgC215nSx8X6A0DlTU4ttDrs0n1.oNbw2O7TWzw/kZCAFnnz4zrLXHxN/"
+set system login user lab authentication ssh-rsa "{{ rsa_key | trim }}"
+set system host-name {{ inventory_hostname }}
+{% for proposal in ike.ike_proposals %}
+set security ike proposal {{ proposal.name }} authentication-algorithm {{ proposal.authentication_algorithm }}
+set security ike proposal {{ proposal.name }} authentication-method {{ proposal.authentication_method }}
+set security ike proposal {{ proposal.name }} dh-group {{ proposal.dh_groups }}
+set security ike proposal {{ proposal.name }} encryption-algorithm {{ proposal.encryption_algorithm }}
+{% endfor %}
+{% for policy in ike.ike_policies %}
+set security ike policy {{ policy.name }} mode {{ policy.mode }}
+set security ike policy {{ policy.name }} pre-shared-key {{ policy.pre_shared_key }}
+set security ike policy {{ policy.name }} proposals {{ policy.proposals }}
+{% endfor %}
+{% for gateway in ike.ike_gateways %}
+set security ike gateway {{ gateway.name }} external-interface {{ gateway.external_interface }}
+set security ike gateway {{ gateway.name }} ike-policy {{ gateway.ike_policy }}
+set security ike gateway {{ gateway.name }} address {{ gateway.address }}
+set security ike gateway {{ gateway.name }} local-identity user-at-hostname "{{ gateway.local_identity }}"
+set security ike gateway {{ gateway.name }} remote-identity user-at-hostname "{{ gateway.remote_identity }}"
+{% endfor %}
+{% for proposal in ipsec.proposals %}
+set security ipsec proposal {{ proposal.name }} protocol {{ proposal.protocol }}
+set security ipsec proposal {{ proposal.name }} encryption-algorithm {{ proposal.encryption_algorithm }}
+set security ipsec proposal {{ proposal.name }} authentication-algorithm {{ proposal.authentication_algorithm }}
+{% endfor %}
+{% for policy in ipsec.policies %}
+set security ipsec policy {{ policy.name }} proposals {{ policy.proposals }}
+{% endfor %}
+{% for vpn in ipsec.vpns %}
+set security ipsec vpn {{ vpn.name }} bind-interface {{ vpn.bind_interface }}
+set security ipsec vpn {{ vpn.name }} ike gateway {{ vpn.ike_gateway }}
+set security ipsec vpn {{ vpn.name }} ike ipsec-policy {{ vpn.ipsec_policy }}
+set security ipsec vpn {{ vpn.name }} establish-tunnels immediately
+set security ipsec vpn {{ vpn.name }} df-bit clear
+{% endfor %}
+set security flow tcp-mss ipsec-vpn mss {{ ipsec_mss }}
+{% for policy in global_security_policies %}
+set security policies global policy {{ policy.name }} match source-address {{ policy.match.source_address }}
+set security policies global policy {{ policy.name }} match destination-address {{ policy.match.destination_address }}
+set security policies global policy {{ policy.name }} match application {{ policy.match.application }}
+{% if policy.match.from_zone %}
+set security policies global policy {{ policy.name }} match from-zone {{ policy.match.from_zone }}
+{% endif %}
+{% if policy.match.to_zone %}
+set security policies global policy {{ policy.name }} match to-zone {{ policy.match.to_zone }}
+{% endif %}
+{% for action in policy.then %}
+set security policies global policy {{ policy.name }} then {{ action }}
+{% endfor %}
+{% endfor %}
+{% for name, zone in zones.iteritems() %}
+{% for service in zone.host_inbound_traffic.system_services %}
+set security zones security-zone {{ name }} host-inbound-traffic system-services {{ service }}
+{% endfor %}
+{% for service in zone.host_inbound_traffic.protocols %}
+set security zones security-zone {{ name }} host-inbound-traffic protocols {{ service }}
+{% endfor %}
+{% for interface in zone.interfaces %}
+set security zones security-zone {{ name }} interfaces {{ interface }}
+{% endfor %}
+{% endfor %}
+{#set interfaces fxp0 unit 0 family inet address 192.168.2.2/30#}
+{% for interface in interfaces %}
+{% if interface.address == 'dhcp' %}
+set interfaces {{ interface.name }} unit {{ interface.unit }} family inet dhcp
+{% else %}
+set interfaces {{ interface.name }} unit {{ interface.unit }} family inet address {{ interface.address}}/24
+{% endif %}
+{#{% if interface.address == 'dhcp'%}
+{% if interface.name != 'fxp0' %}
+set interfaces {{ interface.name }} unit {{ interface.unit }} family inet dhcp
+{% endif %}
+{% else %}
+set interfaces {{ interface.name }} unit {{ interface.unit }} family inet address {{ interface.address}}/24
+{% endif %}#}
+{% if interface.name.startswith('st') %}
+set interfaces {{ interface.name }} unit {{ interface.unit }} family inet mtu {{ st_mtu }}
+{% endif %}
+{% endfor %}
+set routing-options interface-routes rib-group inet lo0
+set routing-options static route 172.25.11.0/24 next-table aws.inet.0
+set routing-options rib-groups lo0 import-rib [inet.0 aws.inet.0]
+{% for instance in routing_instances %}
+set routing-instances {{ instance.name }} instance-type {{ instance.type }}
+{% for interface in instance.interfaces %}
+set routing-instances {{ instance.name }} interface {{ interface }}
+{% endfor %}
+{% if instance.routing_options is defined %}
+{% if instance.routing_options.static is defined %}
+{% for route in instance.routing_options.static %}
+set routing-instances {{ instance.name }} routing-options static route {{ route.destination_prefix }} next-hop {{ route.next_hop }}
+{% endfor %}
+{% endif %}
+{% endif %}
+{# WARNING This part assumes there is only one routing instance WARNING, fix later #}
+{% if protocols.bgp %}
+{% for name, group in protocols.bgp.group.iteritems() %}
+set routing-instances {{ instance.name }} protocols bgp group {{ name }} export {{ group.export }}
+set routing-instances {{ instance.name }} protocols bgp group {{ name }} type {{ group.type }}
+{% for neighbor in group.neighbors %}
+set routing-instances {{ instance.name }} protocols bgp group {{ name }} neighbor {{ neighbor.ip }}
+set routing-instances {{ instance.name }} protocols bgp group {{ name }} neighbor {{ neighbor.ip }} local-as {{ neighbor.local_as }}
+set routing-instances {{ instance.name }} protocols bgp group {{ name }} neighbor {{ neighbor.ip }} peer-as {{ neighbor.peer_as }}
+{% endfor %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% for name, policy in routing_policies.iteritems() %}
+{% for term in policy %}
+{% if term.from is defined  %}
+{% for match in term.from %}
+set policy-options policy {{ name }} term {{ term.name }} from {{ match }}
+{% endfor %}
+{% endif %}
+{% for action in term.then %}
+set policy-options policy {{ name }} term {{ term.name }} then {{ action }}
+{% endfor %}
+{% endfor %} 
+{% endfor %}
+{% if nat is defined %}
+    {% if nat.source is defined %}
+        {% for ruleset in nat.source.rule_sets %}
+            {% for match in ruleset.match %}
+set security nat source rule-set {{ ruleset.name }} {{ match }}
+            {% endfor %}
+            {% for rule in ruleset.rules %}
+                {% for match in rule.match %}
+set security nat source rule-set {{ ruleset.name }} rule {{ rule.name }} match {{ match }}
+                {% endfor %}
+                {% for then in rule.then %}
+set security nat source rule-set {{ ruleset.name }} rule {{ rule.name }} then {{ then }}
+                {% endfor %}
+            {% endfor %}
+        {% endfor %}
+    {% endif %}
+    {% if nat.static is defined %}
+        {% for ruleset in nat.static.rule_sets %}
+            {% for match in ruleset.match %}
+set security nat static rule-set {{ ruleset.name }} {{ match }}
+            {% endfor %}
+            {% for rule in ruleset.rules %}
+                {% for match in rule.match %}
+set security nat static rule-set {{ ruleset.name }} rule {{ rule.name }} match {{ match }}
+                {% endfor %}
+                {% for then in rule.then %}
+set security nat static rule-set {{ ruleset.name }} rule {{ rule.name }} then {{ then }}
+                {% endfor %}
+            {% endfor %}
+        {% endfor %}
+    {% endif %}
+{% endif %}
+set system scripts commit file {{ commit_script_file }} optional
+set system scripts language python
+
+

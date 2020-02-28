@@ -1,0 +1,7 @@
+---
+build_dir: config
+username: lab
+password: Juniper123!
+ansible_user: lab
+ansible_ssh_pass: Juniper123!
+commit_script_file: set_malware_interface.py

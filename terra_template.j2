@@ -1,0 +1,466 @@
+terraform {
+  backend "s3" {
+    bucket = "{{ terraform.s3_backend.bucket }}"
+    key = "{{ terraform.s3_backend.key }}"
+    region = "{{ terraform.s3_backend.region }}"
+  }
+}
+
+# Load all required providers
+provider "aws" {
+  region = "{{ terraform.providers.aws.region }}"
+  access_key = "{{ terraform.providers.aws.access_key }}"
+  secret_key = "{{ terraform.providers.aws.secret_key }}"
+}
+
+provider "azurerm" {
+  version = "{{ terraform.providers.azurerm.version }}"
+  client_id = "{{ terraform.providers.azurerm.client_id }}"
+  client_secret = "{{ terraform.providers.azurerm.secret }}"
+  tenant_id = "{{ terraform.providers.azurerm.tenant_id }}"
+  subscription_id = "{{ terraform.providers.azurerm.subscription_id }}"
+}
+
+########################################
+# Provision AWS resources
+
+# Create project vpc
+
+{%- for vpc in terraform.resources.aws.vpcs %}
+resource "aws_vpc" "{{ vpc.name }}" {
+  cidr_block       = "{{ vpc.cidr_block }}"
+  tags = {
+    {%- for key, val in vpc.tags.items() %}
+    {{ key }} = "{{ val }}"
+    {% endfor %}
+  }
+}
+{%- endfor %}
+
+# Define security groups
+
+{%- for group in terraform.resources.aws.security_groups %}
+
+resource "aws_security_group" "{{ group.name }}" {
+  name        = "{{ group.name }}"
+  description = "{{ group.description }}"
+  vpc_id      = "${aws_vpc.{{ group.vpc }}.id}"
+
+{%- if group.ingress is defined %}
+  ingress {
+    from_port   = {{ group.ingress.from_port }}
+    to_port     = {{ group.ingress.to_port }}
+    protocol    = "{{ group.ingress.protocol }}"
+    cidr_blocks = ["{{ group.ingress.cidr_block }}"]
+  }
+{% endif %}
+{%- if group.egress is defined %}
+  egress {
+    from_port   = {{ group.egress.from_port }}
+    to_port     = {{ group.egress.to_port }}
+    protocol    = "{{ group.egress.protocol }}"
+    cidr_blocks = ["{{ group.egress.cidr_block }}"]
+  }
+{% endif %}
+  tags = {
+    {%- for key, val in group.tags.items() %}
+    {{ key }} = "{{ val }}"
+    {% endfor %}
+  }
+}
+
+{% endfor %}
+
+# Define key pair
+resource "aws_key_pair" "{{ rsa_key_name }}" {
+  key_name = "{{ rsa_key_name }}"
+  public_key = "{{ rsa_key | trim }}"
+}
+
+# Define Subnets
+
+{%- for subnet in terraform.resources.aws.subnets %}
+resource "aws_subnet" "{{ subnet.name }}" {
+  vpc_id     = "${aws_vpc.{{ subnet.vpc }}.id}"
+  cidr_block = "{{ subnet.cidr_block }}"
+  availability_zone = "{{ subnet.availability_zone }}"
+  tags = {
+    {%- for key, val in subnet.tags.items() %}
+    {{ key }} = "{{ val }}"
+    {% endfor %}
+  }
+}
+{% endfor %}
+
+# Define IGW
+
+{%- for gw in terraform.resources.aws.internet_gateways %}
+resource "aws_internet_gateway" "{{ gw.name }}" {
+  vpc_id = "${aws_vpc.{{ gw.vpc }}.id}"
+
+  tags = {
+    {%- for key, val in gw.tags.items() %}
+    {{ key }} = "{{ val }}"
+    {% endfor %}
+  }
+}
+{% endfor %}
+
+{%- for instance in terraform.resources.aws.instances %}
+
+# create interfaces
+
+{%- for interface in instance.interfaces %}
+
+resource "aws_network_interface" "{{ instance.name }}-{{ interface.subnet }}" {
+  subnet_id       = "${aws_subnet.{{ interface.subnet}}.id}"
+  security_groups = ["${aws_security_group.{{ interface.security_group }}.id}"]
+  source_dest_check = {{ interface.source_dest_check | lower }}
+  {%- if interface.private_ip is defined %}
+  private_ips = ["{{ interface.private_ip }}"]
+  {% endif %}
+}
+
+{%- if interface.public_ip %}
+
+resource "aws_eip" "{{ instance.name }}-{{ interface.subnet }}-public" {
+  network_interface = "${aws_network_interface.{{ instance.name }}-{{ interface.subnet }}.id}"
+  vpc      = true
+}
+
+{% endif %}
+
+{% endfor %}
+
+# create public IPs
+
+{% if instance.type == 'vsrx' %}
+
+resource "aws_instance" "{{ instance.name }}" {
+  ami = "{{ instance.ami }}"
+  instance_type = "{{ instance.instance_type }}"
+  tags = {
+    {%- for key, val in instance.tags.items() %}
+    {{ key }} = "{{ val }}"
+    {% endfor %}
+  }
+  availability_zone = "{{ instance.availability_zone }}"
+  key_name = "{{ rsa_key_name }}"
+  {%- for interface in instance.interfaces %}
+  network_interface {
+    network_interface_id = "${aws_network_interface.{{ instance.name }}-{{ interface.subnet }}.id}"
+    device_index = {{ loop.index - 1 }}
+  }
+  {% endfor %}
+
+}
+
+{% elif instance.type == 'host' %}
+
+resource "aws_instance" "{{ instance.name }}" {
+  ami = "{{ instance.ami }}"
+  instance_type = "{{ instance.instance_type }}"
+  tags = {
+    {%- for key, val in instance.tags.items() %}
+    {{ key }} = "{{ val }}"
+    {% endfor %}
+  }
+  user_data = <<CLOUDINIT
+#cloud-config
+bootcmd:
+  - echo "up route add -net {{ instance.gw_subnet }} gw {{ instance.gw_nh }} dev eth0" >> /etc/network/interfaces
+CLOUDINIT
+
+{#  user_data = <<ROUTES
+#!/bin/bash
+echo "up route add -net {{ instance.gw_subnet }} gw {{ instance.gw_nh }} dev eth0" > /etc/network/interfaces.d/51-add-routes.cfg
+route add -net {{ instance.gw_subnet }} gw {{ instance.gw_nh }} dev eth0
+ROUTES#}
+  availability_zone = "{{ instance.availability_zone }}"
+  key_name = "{{ rsa_key_name }}"
+  {%- for interface in instance.interfaces %}
+  network_interface {
+    network_interface_id = "${aws_network_interface.{{ instance.name }}-{{ interface.subnet }}.id}"
+    device_index = {{ loop.index - 1 }}
+  }
+  {% endfor %}
+
+}
+
+{% endif %}
+
+{% endfor %}
+
+{%- for rt in terraform.resources.aws.route_tables %}
+resource "aws_route_table" "{{ rt.name }}" {
+  vpc_id = "${aws_vpc.{{ rt.vpc }}.id}"
+{%- for entry in rt.routes %}
+  route {
+    cidr_block = "{{ entry.cidr_block }}"
+    {% if entry.next_hop.type == 'gw' %}
+    gateway_id = "${aws_internet_gateway.{{ entry.next_hop.value }}.id}"
+    {% elif entry.next_hop.type == 'interface' %}
+    network_interface_id = "${aws_network_interface.{{ entry.next_hop.value.instance }}-{{entry.next_hop.value.subnet}}.id}"
+    {% endif %}
+  }
+{% endfor %}
+  tags = {
+    {%- for key, val in rt.tags.items() %}
+    {{ key }} = "{{ val }}"
+    {% endfor %}
+  }
+}
+{% endfor %}
+
+{%- for ass in terraform.resources.aws.route_table_associations %}
+resource "aws_route_table_association" "{{ ass.name }}" {
+  subnet_id      = aws_subnet.{{ ass.subnet }}.id
+  route_table_id = aws_route_table.{{ ass.route_table }}.id
+}
+{% endfor %}
+
+# Provision Azure resources
+########################################
+# Provision Azure resources
+
+# Define Resource Group
+{%- for group in terraform.resources.azure.resource_groups %}
+resource "azurerm_resource_group" "{{ group.name }}" {
+  name     = "{{ group.name }}"
+  location = "{{ group.location }}"
+}
+
+# Create the vSRX image!
+
+resource "azurerm_image" "vsrx-demo" {
+  name                = "vsrx-demo"
+  location            = "{{ group.location}}"
+  resource_group_name = "{{ group.name}}"
+
+  os_disk {
+    os_type  = "Linux"
+    os_state = "Generalized"
+    blob_uri = "https://joshimages.blob.core.windows.net/srximages/vSRX19.3R2.9.vhd"
+  }
+}
+
+{% endfor %}
+
+# Define security groups
+
+{%- for group in terraform.resources.azure.security_groups %}
+resource "azurerm_network_security_group" "{{ group.name }}" {
+  name                = "{{ group.name }}"
+  location            = "${azurerm_resource_group.{{ group.resource_group }}.location}"
+  resource_group_name = "${azurerm_resource_group.{{ group.resource_group }}.name}"
+  {%- for rule in group.rules %}
+  security_rule {
+    name                       = "{{ rule.name }}"
+    priority                   = {{ rule.priority }}
+    direction                  = "{{ rule.direction }}"
+    access                     = "{{ rule.access }}"
+    protocol                   = "{{ rule.protocol }}"
+    source_port_range          = "{{ rule.source_port_range }}"
+    destination_port_range     = "{{ rule.destination_port_range }}"
+    source_address_prefix      = "{{ rule.source_address_prefix }}"
+    destination_address_prefix = "{{ rule.destination_address_prefix }}"
+  }
+{% endfor %}
+
+}
+{% endfor %}
+
+# Define Virtual Network and Subnets
+{%- for vnet in terraform.resources.azure.virtual_networks %}
+resource "azurerm_virtual_network" "{{ vnet.name }}" {
+  name                = "{{ vnet.name }}"
+  location            = "${azurerm_resource_group.{{ vnet.resource_group }}.location}"
+  resource_group_name = "${azurerm_resource_group.{{ vnet.resource_group }}.name}"
+  address_space       = ["{{ vnet.address_space }}"]
+  dns_servers         = ["{{ vnet.dns_server }}"]
+
+  tags = {
+    {%- for key, val in vnet.tags.items() %}
+    {{ key }} = "{{ val }}"
+    {% endfor %}
+  }
+}
+{% endfor %}
+
+{%- for subnet in terraform.resources.azure.subnets %}
+resource "azurerm_subnet" "{{ subnet.name }}" {
+  name                 = "{{ subnet.name }}"
+  resource_group_name  = "${azurerm_resource_group.{{ subnet.resource_group }}.name}"
+  virtual_network_name = "${azurerm_virtual_network.{{ subnet.virtual_network }}.name}"
+  address_prefix       = "{{ subnet.address_prefix }}"
+  network_security_group_id = "${azurerm_network_security_group.{{ subnet.security_group }}.id}"
+  route_table_id = "${azurerm_route_table.{{ subnet.name }}-routes.id}"
+}
+resource "azurerm_subnet_route_table_association" "{{subnet.name}}-route-assoc" {
+  subnet_id = "${azurerm_subnet.{{ subnet.name }}.id}"
+  route_table_id = "${azurerm_route_table.{{ subnet.name }}-routes.id}"
+}
+
+{% endfor %}
+
+{%- for ass in terraform.resources.azure.subnet_security_group_associations %}
+resource "azurerm_subnet_network_security_group_association" "{{ ass.subnet }}-{{ ass.security_group }}" {
+  subnet_id                 = "${azurerm_subnet.{{ ass.subnet }}.id}"
+  network_security_group_id = "${azurerm_network_security_group.{{ ass.security_group }}.id}"
+}
+{% endfor %}
+
+# Define Route Tables
+{%- for rt in terraform.resources.azure.route_tables %}
+resource "azurerm_route_table" "{{ rt.name }}" {
+  name                          = "{{ rt.name }}"
+  location                      = "${azurerm_resource_group.{{ rt.resource_group }}.location}"
+  resource_group_name           = "${azurerm_resource_group.{{ rt.resource_group }}.name}"
+  disable_bgp_route_propagation = true
+
+  {%- for entry in rt.routes %}
+  route {
+    name            = "{{ entry.name }}"
+    address_prefix  = "{{ entry.address_prefix }}"
+    next_hop_type   = "{{ entry.next_hop_type }}"
+    {%- if entry.next_hop_type == "VirtualAppliance" %}
+    next_hop_in_ip_address = "{{ entry.next_hop_in_ip_address }}"
+    {% endif %}
+  }
+  {% endfor %}
+}
+{% endfor %}
+
+# Define Public IPs
+
+{%- for instance in terraform.resources.azure.instances %}
+
+{%- for interface in instance.interfaces %}
+{%- if interface.public_ip %}
+resource "azurerm_public_ip" "{{ instance.name }}-{{ interface.subnet }}-public" {
+  name                = "{{ instance.name }}-{{ interface.subnet }}-public"
+  location            = "{{ interface.location }}"
+  resource_group_name = "${azurerm_resource_group.{{ interface.resource_group }}.name}"
+  allocation_method   = "Static"
+}
+{% endif %}
+resource "azurerm_network_interface" "{{ interface.name }}" {
+  name                = "{{ interface.name }}"
+  location            = "{{ interface.location }}"
+  resource_group_name = "${azurerm_resource_group.{{ interface.resource_group }}.name}"
+  network_security_group_id = "${azurerm_network_security_group.{{ interface.security_group }}.id}"
+  enable_ip_forwarding = true
+  ip_configuration {
+    name                          = "{{ interface.name }}-1"
+    subnet_id                     = "${azurerm_subnet.{{ interface.subnet }}.id}"
+    private_ip_address_allocation = "{{ interface.private_ip_address_allocation }}"
+    {%- if interface.private_ip_address_allocation == "Static" %}
+    private_ip_address = "{{ interface.private_ip }}"
+    {% endif %}
+    {%- if interface.public_ip %}
+    public_ip_address_id = "${azurerm_public_ip.{{ instance.name }}-{{ interface.subnet }}-public.id}"
+    {% endif %} 
+  }
+}
+{% endfor %}
+
+{% if instance.type == 'vsrx' %}
+resource "azurerm_virtual_machine" "{{ instance.name }}" {
+  name                  = "{{ instance.name }}"
+  location              = "${azurerm_resource_group.{{ instance.resource_group }}.location}"
+  resource_group_name   = "${azurerm_resource_group.{{ instance.resource_group }}.name}"
+  network_interface_ids = [{%- for interface in instance.interfaces %}{%- if loop.count == instance.interfaces|length %}"${azurerm_network_interface.{{ interface.name }}.id}"{% else %}"${azurerm_network_interface.{{ interface.name }}.id}",{% endif %}{% endfor %}]
+  primary_network_interface_id = "${azurerm_network_interface.{{ instance.interfaces[0].name }}.id}"
+  vm_size               = "{{ instance.size }}"
+
+  delete_os_disk_on_termination = true
+  delete_data_disks_on_termination = true
+
+  {#storage_image_reference {
+    publisher = "{{ instance.image.publisher }}"
+    offer     = "{{ instance.image.offer }}"
+    sku       = "{{ instance.image.sku }}"
+    version   = "{{ instance.image.version }}"
+  }#}
+
+  storage_image_reference {
+    id = "${azurerm_image.vsrx-demo.id}"
+  }
+
+  storage_os_disk {
+    name              = "{{ instance.os_disk.name }}"
+    caching           = "{{ instance.os_disk.caching }}"
+    create_option     = "{{ instance.os_disk.create_option }}"
+    managed_disk_type = "{{ instance.os_disk.managed_disk_type }}"
+  }
+  {#plan {
+    name = "{{ instance.image.plan }}"
+    publisher = "{{ instance.image.publisher }}"
+    product = "{{ instance.image.product }}"
+  }#}
+  os_profile {
+    computer_name  = "{{ instance.os_profile.computer_name }}"
+    admin_username = "{{ instance.os_profile.admin_username }}"
+    admin_password = "{{ instance.os_profile.admin_password }}"
+  }
+  os_profile_linux_config {
+    disable_password_authentication = false
+  }
+
+  tags = {
+    {%- for key, val in instance.tags.items() %}
+    {{ key }} = "{{ val }}"
+    {% endfor %}
+  }
+}
+
+{% elif instance.type == 'host' %}
+
+resource "azurerm_virtual_machine" "{{ instance.name }}" {
+  name                  = "{{ instance.name }}"
+  location              = "${azurerm_resource_group.{{ instance.resource_group }}.location}"
+  resource_group_name   = "${azurerm_resource_group.{{ instance.resource_group }}.name}"
+  network_interface_ids = [{%- for interface in instance.interfaces %}{%- if loop.count == instance.interfaces|length %}"${azurerm_network_interface.{{ interface.name }}.id}"{% else %}"${azurerm_network_interface.{{ interface.name }}.id}",{% endif %}{% endfor %}]
+  primary_network_interface_id = "${azurerm_network_interface.{{ instance.interfaces[0].name }}.id}"
+  vm_size               = "{{ instance.size }}"
+
+  delete_os_disk_on_termination = true
+  
+
+  # Uncomment this line to delete the data disks automatically when deleting the VM
+  delete_data_disks_on_termination = true
+
+  storage_image_reference {
+    publisher = "{{ instance.image.publisher }}"
+    offer     = "{{ instance.image.offer }}"
+    sku       = "{{ instance.image.sku }}"
+    version   = "{{ instance.image.version }}"
+  }
+
+  storage_os_disk {
+    name              = "{{ instance.os_disk.name }}"
+    caching           = "{{ instance.os_disk.caching }}"
+    create_option     = "{{ instance.os_disk.create_option }}"
+    managed_disk_type = "{{ instance.os_disk.managed_disk_type }}"
+  }
+
+  os_profile {
+    computer_name  = "{{ instance.os_profile.computer_name }}"
+    admin_username = "{{ instance.os_profile.admin_username }}"
+    admin_password = "{{ instance.os_profile.admin_password }}"
+
+  }
+
+  os_profile_linux_config {
+    disable_password_authentication = false
+  }
+  tags = {
+    {%- for key, val in instance.tags.items() %}
+    {{ key }} = "{{ val }}"
+    {% endfor %}
+  }
+}
+
+{% endif %}
+
+{% endfor %}

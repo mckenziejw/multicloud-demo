@@ -1,0 +1,4 @@
+set system ntp boot-server {{ ntp.boot_server }}
+{% for server in ntp.server %}
+set system ntp server {{ server }}
+{% endfor %}
