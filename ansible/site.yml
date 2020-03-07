@@ -81,7 +81,7 @@
         ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
         command: request services application-identification download status
       register: download_result
-      until: ("Downloading application package succeed" in download_result.stdout)
+      until: ("succeed" in download_result.stdout)
     - name: install application signatures
       juniper_junos_command:
         host: "{{ mgmt_ip }}"
@@ -94,8 +94,8 @@
         user: "{{ username }}"
         ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
         command: request services application-identification install status
-      register: download_result
-      until: ("succeed" in download_result.stdout)
+      register: install_result
+      until: ("success" in install_result.stdout or "already installed" in install_result.stdout)
   - name: Update Azure JunOS Configuration
     hosts: azure
     roles:
@@ -174,7 +174,7 @@
         ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
         command: request services application-identification download status
       register: download_result
-      until: ("Downloading application package succeed" in download_result.stdout)
+      until: ("succeed" in download_result.stdout)
     - name: install application signatures
       juniper_junos_command:
         host: "{{ mgmt_ip }}"
@@ -187,8 +187,8 @@
         user: "{{ username }}"
         ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
         command: request services application-identification install status
-      register: download_result
-      until: ("succeed" in download_result.stdout)
+      register: install_result
+      until: ("success" in install_result.stdout or "already installed" in install_result.stdout)
 
   - name: Update OnPrem JunOS Configuration
     hosts: onprem
