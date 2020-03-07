@@ -39,7 +39,7 @@ Note: This toolset has been tested on Ubuntu 16.04.1 with Docker 19.03.5
 ``` shell
 $ mkdir /path/to/project
 $ cd /path/to/project
-$ git clone https://github.com/mckenziejw/multicloud-lab
+$ git clone https://github.com/mckenziejw/multicloud-demo
 ```
 ### Create an RSA key pair. This will be used to secure instances requiring public key authentication.
 
@@ -78,8 +78,8 @@ The key's randomart image is:
 ### Move generated keypair to the ansible folder
 
 ```shell
-$ mv lab_key /path/to/project/multicloud-lab/terraform/ansible
-$ mv lab_key.pub /path/to/project/multicloud-lab/terraform/ansible
+$ mv lab_key /path/to/project/multicloud-demo/ansible
+$ mv lab_key.pub /path/to/project/multicloud-demo/ansible
 ```
 
 ### Set the value of the `rsa_key_name` key in `deployment.yml` to the name of your generated key
@@ -215,7 +215,7 @@ The `create_plan.py` script will take user-defined values along with the `terra_
 A Docker image, `autofunbot/junos_automator` is provided in the DockerHub repository and contains all required software and dependencies for this demo. 
 
 ```shell
-$ cd /path/to/project/multicloud-lab
+$ cd /path/to/project/multicloud-demo
 $ sudo docker run -it --rm -v $PWD:/playbooks autofunbot/junos_automator python create_plan.py --template terra_template.j2 --varsfile deployment.yml
 ``` 
 ### Initialize the Terraform backend
@@ -254,7 +254,7 @@ b. Generate a `host_var` file for each vSRX instance in `ansible/host_vars`
 c. Populate the inventory file for Ansible.
 
 ```shell
-$ cd /path/to/project/multicloud-lab/terraform
+$ cd /path/to/project/multicloud-demo/terraform
 $ sudo docker run -it --rm -v $PWD:/playbooks -e AWS_SHARED_CREDENTIALS_FILE="credentials" autofunbot/junos_automator python master_deployer.py --varsfile deployment.yml --inventoryfile test 
 ``` 
 
@@ -266,7 +266,7 @@ The `site.yml` playbook does the following:
     c. Install the provided vSRX licenses
 
 ```shell
-$ cd /path/to/project/multicloud-lab
+$ cd /path/to/project/multicloud-demo
 $ sudo docker run -it --rm -v $PWD:/playbooks autofunbot/junos_automator ansible-playbook -i ansible/test ansible/site.yml
 ```
 
@@ -542,7 +542,7 @@ At this point you have enabled metadata filter-based policies to control East-We
     Note: You will need the `lab_key` RSA key set in your `deployment.yml` to authenticate to AWS instances. For Azure instances you can authenticate with the crentials defined in `deployment.yml` which by default are `lab/Juniper123!`.
 
 ```shell
-lab@deployer:~/multicloud-lab/ansible$ ssh ec2-user@10.0.1.10 -i lab_key
+lab@deployer:~/multicloud-demo/ansible$ ssh ec2-user@10.0.1.10 -i lab_key
 The authenticity of host '10.0.1.10 (10.0.1.10)' can't be established.
 ECDSA key fingerprint is SHA256:8jFPT4cCJdVH3DZiSHFrKRNsJygi5L8C3oDU8tdfK2c.
 Are you sure you want to continue connecting (yes/no)? yes
@@ -557,7 +557,7 @@ https://aws.amazon.com/amazon-linux-2/
 ```  
 
 ```shell
-lab@deployer:~/multicloud-lab/ansible$ ssh ec2-user@10.0.2.10 -i lab_key
+lab@deployer:~/multicloud-demo/ansible$ ssh ec2-user@10.0.2.10 -i lab_key
 The authenticity of host '10.0.2.10 (10.0.2.10)' can't be established.
 ECDSA key fingerprint is SHA256:ZrkwVLMMv2GEPVXh/Uc6ryJz0kLBKy5sZE9iRL8QTtE.
 Are you sure you want to continue connecting (yes/no)? yes
@@ -572,7 +572,7 @@ https://aws.amazon.com/amazon-linux-2/
 ```  
 
 ```shell
-lab@deployer:~/multicloud-lab/ansible$ ssh lab@10.1.1.10
+lab@deployer:~/multicloud-demo/ansible$ ssh lab@10.1.1.10
 The authenticity of host '10.1.2.10 (10.1.2.10)' can't be established.
 ECDSA key fingerprint is SHA256:744zvITnaW5iMmhOfFIe+iEKvAgY6TcmaqKQtcbvkuE.
 Are you sure you want to continue connecting (yes/no)? yes
@@ -609,7 +609,7 @@ lab@az-web-server-1:~$
 ```
 
 ```shell
-lab@deployer:~/multicloud-lab/ansible$ ssh lab@10.1.2.10
+lab@deployer:~/multicloud-demo/ansible$ ssh lab@10.1.2.10
 The authenticity of host '10.1.2.10 (10.1.2.10)' can't be established.
 ECDSA key fingerprint is SHA256:744zvITnaW5iMmhOfFIe+iEKvAgY6TcmaqKQtcbvkuE.
 Are you sure you want to continue connecting (yes/no)? yes
