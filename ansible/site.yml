@@ -56,11 +56,9 @@
         ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
         command: request system license add {{ license_file }}
       register: response
-
     - name: Print license response
       debug:
         var: response.stdout
-
     - name: push commit script
       junos_scp:
         src: "{{ playbook_dir }}/static_files/{{ commit_script_file }}"
@@ -70,14 +68,40 @@
           ssh_keyfile: "{{playbook_dir}}/{{ rsa_key_name }}"
           host: "{{ mgmt_ip }}"
       ignore_errors: True
-
+    - name: download application signatures
+      juniper_junos_command:
+        host: "{{ mgmt_ip }}"
+        user: "{{ username }}"
+        ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
+        command: request services application-identification download
+    - name: wait for download to complete
+      juniper_junos_command:
+        host: "{{ mgmt_ip }}"
+        user: "{{ username }}"
+        ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
+        command: request services application-identification download status
+      register: download_result
+      until: ("Downloading application package succeed" in download_result.stdout)
+    - name: install application signatures
+      juniper_junos_command:
+        host: "{{ mgmt_ip }}"
+        user: "{{ username }}"
+        ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
+        command: request services application-identification install
+    - name: wait for install to complete
+      juniper_junos_command:
+        host: "{{ mgmt_ip }}"
+        user: "{{ username }}"
+        ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
+        command: request services application-identification install status
+      register: download_result
+      until: ("succeed" in download_result.stdout)
   - name: Update Azure JunOS Configuration
     hosts: azure
     roles:
       - Juniper.junos
     connection: local
     gather_facts: no
-
     tasks:
     - name: Checking NETCONF
       wait_for: 
@@ -137,6 +161,34 @@
           ssh_keyfile: "{{playbook_dir}}/{{ rsa_key_name }}"
           host: "{{ mgmt_ip }}"
       ignore_errors: True
+    - name: download application signatures
+      juniper_junos_command:
+        host: "{{ mgmt_ip }}"
+        user: "{{ username }}"
+        ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
+        command: request services application-identification download
+    - name: wait for download to complete
+      juniper_junos_command:
+        host: "{{ mgmt_ip }}"
+        user: "{{ username }}"
+        ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
+        command: request services application-identification download status
+      register: download_result
+      until: ("Downloading application package succeed" in download_result.stdout)
+    - name: install application signatures
+      juniper_junos_command:
+        host: "{{ mgmt_ip }}"
+        user: "{{ username }}"
+        ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
+        command: request services application-identification install
+    - name: wait for download to complete
+      juniper_junos_command:
+        host: "{{ mgmt_ip }}"
+        user: "{{ username }}"
+        ssh_private_key_file: "{{playbook_dir}}/{{ rsa_key_name }}"
+        command: request services application-identification install status
+      register: download_result
+      until: ("succeed" in download_result.stdout)
 
   - name: Update OnPrem JunOS Configuration
     hosts: onprem

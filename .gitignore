@@ -9,3 +9,4 @@ ansible/host_vars/*.yml
 ansible/config/*.conf
 ansible/test
 vmware/
+terraform_aws/

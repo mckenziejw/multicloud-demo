@@ -169,6 +169,7 @@ resource "aws_instance" "{{ instance.name }}" {
 #cloud-config
 bootcmd:
   - echo "up route add -net {{ instance.gw_subnet }} gw {{ instance.gw_nh }} dev eth0" >> /etc/network/interfaces
+  - route add -net {{ instance.gw_subnet }} gw {{ instance.gw_nh }} dev eth0
 CLOUDINIT
 
 {#  user_data = <<ROUTES
