@@ -227,7 +227,21 @@ $ sudo docker run -it -v $PWD:/playbooks -e AWS_SHARED_CREDENTIALS_FILE="credent
 ```
 ### Subscribe to AWS plan
 
+Navigate to the `AWS Marketplace Subscriptions` service. Click on `Discover Products` and search for the vSRX subscription. Select the desired vSRX subscription.
+
+![](readme_images/ss55.png)
+
+![](readme_images/ss56.png)
+
+Click "Continue to Subscription". Click on "Accept Terms." You have now subsribed to the plan and can now close the window.
+
+![](readme_images/ss57.png)
+
+![](readme_images/ss58.png)
+
 ### Accept Terms for Azure image
+
+  NOTE: The current version of this code uses a custom image and does not require this step.
 
 Before deploying the vSRX on Azure you will need to accept the Marketplace terms. You can do this from any system with the Azure CLI client installed. Replace the urn with the urn for your image. URN format is `publisher:offer:sku:version`.
 
@@ -476,7 +490,7 @@ Configure the following rule:
   Src. Expression: Provider = PE AND Department = finance AND Tier = web  
   Dest. Zone: Any  
   Dest. Address: Provider = PE AND Department = finance AND Tier = db  
-  Dest. Expression: Provider = PE AND Department = finance AND Tier = db
+  Dest. Expression: Provider = PE AND Department = finance AND Tier = db  
   Service: Any  
   Action: Permit  
 
@@ -497,28 +511,28 @@ Configure the following rule:
 
 
 - Name: hr-web-to-db  
-  Description: Allow all traffic from the *web* tier to the *db* tier for instances in the *hr* department.
+  Description: Allow all traffic from the *web* tier to the *db* tier for instances in the *hr* department.  
   Src. Zone: Any  
   Src. Address: Provider = PE AND Department = hr AND Tier = web  
   Src. Expression: Provider = PE AND Department = hr AND Tier = web  
   Dest. Zone: Any  
   Dest. Address: Provider = PE AND Department = hr AND Tier = db  
-  Dest. Expression: Provider = PE AND Department = hr AND Tier = db
+  Dest. Expression: Provider = PE AND Department = hr AND Tier = db  
   Service: Any  
   Action: Permit   
 
 - Name: allow-outbound  
-  Description: Allow all outbound sessions from your private zones (by default *trust* and *dmz*) to the internet(*untrust*) and the VPN zone (*vpn*) 
+  Description: Allow all outbound sessions from your private zones (by default *trust* and *dmz*) to the internet(*untrust*)  and the VPN zone (*vpn*)  
   Src. Zone: trust dmz   
-  Src. Address: Any
-  Dest. Zone: untrust
-  Dest. Address: Any
+  Src. Address: Any  
+  Dest. Zone: untrust  
+  Dest. Address: Any  
   Service: Any  
-  Action: Permit
-  Advanced Security: Threat Prevention Policy (my-tp-policy) 
+  Action: Permit  
+  Advanced Security: Threat Prevention Policy (my-tp-policy)  
 
 - Name: allow-vpn-inbound  
-  Description: Allow all inbound sessions from the VPN zone (*vpn*) destined to the private cloud zones (*trust* and *dmz*) 
+  Description: Allow all inbound sessions from the VPN zone (*vpn*) destined to the private cloud zones (*trust* and *dmz*)  
   Src. Zone: vpn  
   Src. Address: Any  
   Dest. Zone: trust dmz  
@@ -1011,25 +1025,6 @@ $ sudo docker run -it -v $PWD:/project -e AWS_SHARED_CREDENTIALS_FILE="aws_crede
 
 ## Detailed Configuration <a name="detailed-config"></a>
 
-### Configuring Terraform Backend
-
-The default ```deployment.yml``` file assumes you will be using an Amazon S3 bucket to store Terraform state. Terraform supports many backend types, including local storage. See Terraform docs [here](https://www.terraform.io/docs/backends/types/index.html) for additional detail.
-
-Create an S3 bucket and access key. Update the following section of your deployment file with the created values:
-
-```YAML
-terraform:
-  lab_domain: juniper.net
-  s3_backend: 
-    bucket: <NEEDS VALUE>
-    key: <NEEDS VALUE>
-    region: <NEEDS VALUE>
-```
-
-### Configuring Terraform provider settings
-
-### Defining Instance Settings
-
 The terraform/resources section of the deployment vars file defines all resources to be created in the cloud. See [Terraform providers documentation](https://www.terraform.io/docs/providers/index.html) for full detail.
 
 As provided in this repo, the sample ```deployment.yml``` file defines the following topology:
@@ -1038,14 +1033,4 @@ As provided in this repo, the sample ```deployment.yml``` file defines the follo
 
     Note: We do not recommend modifying to provided toplogy without an adequate understanding of Terraform and the Azure/AWS provider modules.
 
-#### Ansible for post-deployment customization
-
-### Configuring TAGS
-
-### Defining JunOS Configurtions
-
-### User data
-
-
-### Accept terms on Azure and subscribe on AWS (may have to use the CLI instead of portal because reasons)
 
