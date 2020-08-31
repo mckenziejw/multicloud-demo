@@ -269,7 +269,7 @@ b. Generate a `host_var` file for each vSRX instance in `ansible/host_vars`
 c. Populate the inventory file for Ansible.
 
 ```shell
-$ cd /path/to/project/multicloud-demo/terraform
+$ cd /path/to/project/multicloud-demo
 $ sudo docker run -it --rm -v $PWD:/playbooks -e AWS_SHARED_CREDENTIALS_FILE="credentials" autofunbot/junos_automator python master_deployer.py --varsfile deployment.yml --inventoryfile test 
 ``` 
 
